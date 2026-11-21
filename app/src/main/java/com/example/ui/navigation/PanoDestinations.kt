@@ -7,3 +7,6 @@ object SessionsRoute
 
 @Serializable
 data class CaptureRoute(val sceneId: String)
+
+@Serializable
+data class PanoramaViewerRoute(val sceneId: String)

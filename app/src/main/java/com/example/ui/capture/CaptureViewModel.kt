@@ -67,7 +67,7 @@ data class CaptureUiState(
     val isCaptureInFlight: Boolean = false,
     val flashTriggerCounter: Int = 0,
     val isLowStorage: Boolean = false,
-    val showIncompleteFinishConfirm: Boolean = false,
+    val showFinishOptionsDialog: Boolean = false,
     val isExporting: Boolean = false,
     val exportResult: ExportResult? = null,
     val errorMessage: String? = null,
@@ -144,6 +144,7 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                                 vfovDeg = hw.vfovDeg,
                                 focalLengthMm = hw.focalLengthMm,
                                 lensId = hw.lensId,
+                                isUltrawide = hw.isUltrawide,
                                 aeLockSupported = hw.aeLockSupported,
                                 awbLockSupported = hw.awbLockSupported
                             )
@@ -153,11 +154,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 _uiState.value = _uiState.value.copy(
                     cameraInfo = CameraHardwareInfo(
-                        lensId = "simulated_back",
-                        focalLengthMm = 4.2f,
-                        equivalent35mmFocalLength = 26,
-                        hfovDeg = 54f,
-                        vfovDeg = 68f,
+                        lensId = "simulated_ultrawide",
+                        focalLengthMm = 2.2f,
+                        equivalent35mmFocalLength = 14,
+                        hfovDeg = 74f,
+                        vfovDeg = 92f,
+                        isUltrawide = true,
+                        zoomRatioApplied = 0.5f,
                         aeLockSupported = true,
                         awbLockSupported = true,
                         aeLocked = true,
@@ -197,11 +200,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             _uiState.value = _uiState.value.copy(
                 isSimulated = true,
                 cameraInfo = CameraHardwareInfo(
-                    lensId = "simulated_back",
-                    focalLengthMm = 4.2f,
-                    equivalent35mmFocalLength = 26,
-                    hfovDeg = 54f,
-                    vfovDeg = 68f,
+                    lensId = "simulated_ultrawide",
+                    focalLengthMm = 2.2f,
+                    equivalent35mmFocalLength = 14,
+                    hfovDeg = 74f,
+                    vfovDeg = 92f,
+                    isUltrawide = true,
+                    zoomRatioApplied = 0.5f,
                     aeLockSupported = true,
                     awbLockSupported = true,
                     aeLocked = true,
@@ -366,26 +371,21 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
         val targets = _uiState.value.targets
         if (targets.none { it.captured }) {
             _uiState.value = _uiState.value.copy(
-                errorMessage = "Take at least one photo before exporting."
+                errorMessage = "Take at least one photo before finishing."
             )
             return
         }
-        val hasUncaptured = targets.any { !it.captured }
-        if (hasUncaptured) {
-            _uiState.value = _uiState.value.copy(showIncompleteFinishConfirm = true)
-        } else {
-            performExport()
-        }
+        _uiState.value = _uiState.value.copy(showFinishOptionsDialog = true)
     }
 
-    fun dismissIncompleteFinishConfirm() {
-        _uiState.value = _uiState.value.copy(showIncompleteFinishConfirm = false)
+    fun dismissFinishOptionsDialog() {
+        _uiState.value = _uiState.value.copy(showFinishOptionsDialog = false)
     }
 
     fun performExport() {
         val swt = latestSceneWithTargets ?: return
         _uiState.value = _uiState.value.copy(
-            showIncompleteFinishConfirm = false,
+            showFinishOptionsDialog = false,
             isExporting = true,
             errorMessage = null
         )

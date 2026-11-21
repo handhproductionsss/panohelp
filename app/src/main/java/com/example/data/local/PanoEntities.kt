@@ -32,7 +32,10 @@ data class SceneEntity(
     val nextCaptureOrder: Int = 1,
     val lastExportUri: String? = null,
     val lastExportDisplayName: String? = null,
-    val isSimulated: Boolean = false
+    val isSimulated: Boolean = false,
+    val isUltrawide: Boolean = false,
+    val stitchedImagePath: String? = null,
+    val stitchedSavedName: String? = null
 )
 
 @Entity(

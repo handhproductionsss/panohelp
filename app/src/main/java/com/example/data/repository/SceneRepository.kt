@@ -31,10 +31,11 @@ class SceneRepository(
     suspend fun createScene(
         name: String,
         isSimulated: Boolean,
-        hfovDeg: Float = TargetPlanner.DEFAULT_PORTRAIT_HFOV_DEG,
-        vfovDeg: Float = TargetPlanner.DEFAULT_PORTRAIT_VFOV_DEG,
-        focalLengthMm: Float = 4.2f,
-        lensId: String = if (isSimulated) "simulated_back" else "0"
+        hfovDeg: Float = if (isSimulated) 74.0f else TargetPlanner.DEFAULT_PORTRAIT_HFOV_DEG,
+        vfovDeg: Float = if (isSimulated) 92.0f else TargetPlanner.DEFAULT_PORTRAIT_VFOV_DEG,
+        focalLengthMm: Float = if (isSimulated) 2.2f else 4.2f,
+        lensId: String = if (isSimulated) "simulated_ultrawide" else "0",
+        isUltrawide: Boolean = isSimulated
     ): String = withContext(Dispatchers.IO) {
         val sceneId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
@@ -59,7 +60,8 @@ class SceneRepository(
             focalLengthMm = focalLengthMm,
             lensId = lensId,
             sensorSource = if (isSimulated) "SIMULATED" else "GAME_ROTATION_VECTOR",
-            isSimulated = isSimulated
+            isSimulated = isSimulated,
+            isUltrawide = isUltrawide
         )
 
         val targetEntities = plan.map { p ->
@@ -83,7 +85,7 @@ class SceneRepository(
 
     /**
      * Once the real camera opens on the first visit (before any photos are captured),
-     * regenerate the target plan using the device's true optical FOV so overlap stays ~25-30%.
+     * regenerate the target plan using the widest back camera's true optical FOV.
      */
     suspend fun updateCameraSpecsAndReplanIfUntouched(
         sceneId: String,
@@ -91,6 +93,7 @@ class SceneRepository(
         vfovDeg: Float,
         focalLengthMm: Float,
         lensId: String,
+        isUltrawide: Boolean,
         aeLockSupported: Boolean,
         awbLockSupported: Boolean
     ) = withContext(Dispatchers.IO) {
@@ -102,6 +105,7 @@ class SceneRepository(
             vfovDeg = vfovDeg,
             focalLengthMm = focalLengthMm,
             lensId = lensId,
+            isUltrawide = isUltrawide,
             aeLockSupported = aeLockSupported,
             awbLockSupported = awbLockSupported,
             updatedAtMs = now
@@ -210,6 +214,21 @@ class SceneRepository(
                 updatedAtMs = System.currentTimeMillis(),
                 lastExportUri = exportUri,
                 lastExportDisplayName = exportDisplayName
+            )
+        )
+    }
+
+    suspend fun markStitched(
+        sceneId: String,
+        localStitchedPath: String,
+        savedPublicName: String
+    ) = withContext(Dispatchers.IO) {
+        val current = dao.getSceneOnce(sceneId) ?: return@withContext
+        dao.updateScene(
+            current.scene.copy(
+                updatedAtMs = System.currentTimeMillis(),
+                stitchedImagePath = localStitchedPath,
+                stitchedSavedName = savedPublicName
             )
         )
     }

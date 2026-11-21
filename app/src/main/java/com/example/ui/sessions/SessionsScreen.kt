@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Panorama
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -37,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -72,6 +74,7 @@ import com.example.R
 import com.example.data.local.SceneWithTargets
 import com.example.data.local.SessionStatus
 import com.example.data.local.TargetEntity
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,6 +85,7 @@ import kotlin.math.sin
 @Composable
 fun SessionsScreen(
     onOpenScene: (String) -> Unit,
+    onOpenPanoramaViewer: (String) -> Unit,
     viewModel: SessionsViewModel = viewModel()
 ) {
     val scenes by viewModel.scenes.collectAsStateWithLifecycle()
@@ -210,6 +214,7 @@ fun SessionsScreen(
                             SceneSessionCard(
                                 item = item,
                                 onResume = { onOpenScene(item.scene.id) },
+                                onStitchOrView = { onOpenPanoramaViewer(item.scene.id) },
                                 onShare = { viewModel.exportAndShareScene(item) },
                                 onDelete = { pendingDeleteScene = item }
                             )
@@ -386,12 +391,16 @@ private fun SimulatedModeBanner(
 private fun SceneSessionCard(
     item: SceneWithTargets,
     onResume: () -> Unit,
+    onStitchOrView: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     val scene = item.scene
     val hasAnyCapture = item.targets.any { it.captured }
     val isExported = scene.status == SessionStatus.EXPORTED.name
+    val hasStitchedPanorama = remember(scene.stitchedImagePath) {
+        !scene.stitchedImagePath.isNullOrBlank() && File(scene.stitchedImagePath).exists()
+    }
 
     val dateStr = remember(scene.createdAtMs) {
         SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(scene.createdAtMs))
@@ -429,6 +438,18 @@ private fun SceneSessionCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         StatusChip(isExported = isExported)
+                        if (scene.isUltrawide) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "UW",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         if (scene.isSimulated) {
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -444,7 +465,9 @@ private fun SceneSessionCard(
                         Text(
                             text = stringResource(R.string.created_at_format, dateStr),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -464,7 +487,8 @@ private fun SceneSessionCard(
             Spacer(Modifier.height(14.dp))
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Button(
@@ -479,28 +503,42 @@ private fun SceneSessionCard(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.resume_session))
+                    Text(stringResource(R.string.resume_session), maxLines = 1)
                 }
 
                 if (hasAnyCapture) {
                     FilledTonalButton(
-                        onClick = onShare,
+                        onClick = onStitchOrView,
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("share_scene_${scene.id}")
+                            .testTag("stitch_scene_${scene.id}")
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Share,
+                            imageVector = Icons.Filled.Panorama,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = if (isExported) {
-                                stringResource(R.string.export_share)
-                            } else {
-                                stringResource(R.string.re_export)
-                            }
+                            text = stringResource(
+                                if (hasStitchedPanorama) R.string.view_panorama else R.string.stitch_now
+                            ),
+                            maxLines = 1
+                        )
+                    }
+
+                    FilledTonalIconButton(
+                        onClick = onShare,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("share_scene_${scene.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = stringResource(
+                                if (isExported) R.string.export_share else R.string.re_export
+                            ),
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

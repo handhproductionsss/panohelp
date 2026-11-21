@@ -11,9 +11,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.ui.capture.CaptureScreen
 import com.example.ui.navigation.CaptureRoute
+import com.example.ui.navigation.PanoramaViewerRoute
 import com.example.ui.navigation.SessionsRoute
 import com.example.ui.sessions.SessionsScreen
 import com.example.ui.theme.PanoGuideTheme
+import com.example.ui.viewer.PanoramaViewerScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +40,9 @@ fun PanoGuideApp() {
                 SessionsScreen(
                     onOpenScene = { sceneId ->
                         navController.navigate(CaptureRoute(sceneId))
+                    },
+                    onOpenPanoramaViewer = { sceneId ->
+                        navController.navigate(PanoramaViewerRoute(sceneId))
                     }
                 )
             }
@@ -47,6 +52,18 @@ fun PanoGuideApp() {
             // Capture viewfinder always uses the dark precision instrument palette
             PanoGuideTheme(darkTheme = true) {
                 CaptureScreen(
+                    sceneId = route.sceneId,
+                    onNavigateBack = { navController.popBackStack() },
+                    onOpenPanoramaViewer = { sceneId ->
+                        navController.navigate(PanoramaViewerRoute(sceneId))
+                    }
+                )
+            }
+        }
+        composable<PanoramaViewerRoute> { backStackEntry ->
+            val route: PanoramaViewerRoute = backStackEntry.toRoute()
+            PanoGuideTheme(darkTheme = true) {
+                PanoramaViewerScreen(
                     sceneId = route.sceneId,
                     onNavigateBack = { navController.popBackStack() }
                 )

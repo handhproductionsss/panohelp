@@ -103,6 +103,7 @@ import com.example.ui.theme.SignalCyan
 fun CaptureScreen(
     sceneId: String,
     onNavigateBack: () -> Unit,
+    onOpenPanoramaViewer: (String) -> Unit,
     viewModel: CaptureViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -360,9 +361,10 @@ fun CaptureScreen(
                     onClick = { viewModel.onManualCaptureClick() }
                 )
 
-                // Exposure / White Balance status pill for symmetry
+                // Exposure / White Balance + lens status pill for symmetry
                 ExposureStatusPill(
                     isSimulated = state.isSimulated,
+                    isUltrawide = state.cameraInfo.isUltrawide,
                     aeLocked = state.cameraInfo.aeLocked,
                     awbLocked = state.cameraInfo.awbLocked,
                     aeSupported = state.cameraInfo.aeLockSupported,
@@ -372,23 +374,41 @@ fun CaptureScreen(
         }
     }
 
-    // Incomplete finish confirmation dialog
-    if (state.showIncompleteFinishConfirm) {
+    // Finish scene dialog: choose between on-device 360° Stitcher or raw ZIP export
+    if (state.showFinishOptionsDialog) {
+        val isComplete = state.evaluation.allTargetsCaptured
         AlertDialog(
-            onDismissRequest = { viewModel.dismissIncompleteFinishConfirm() },
+            onDismissRequest = { viewModel.dismissFinishOptionsDialog() },
             title = { Text(stringResource(R.string.finish_incomplete_title)) },
-            text = { Text(stringResource(R.string.finish_incomplete_body)) },
+            text = {
+                Text(
+                    stringResource(
+                        if (isComplete) R.string.finish_complete_body else R.string.finish_incomplete_body
+                    )
+                )
+            },
             confirmButton = {
                 Button(
-                    onClick = { viewModel.performExport() },
-                    modifier = Modifier.testTag("confirm_export_button")
+                    onClick = {
+                        viewModel.dismissFinishOptionsDialog()
+                        onOpenPanoramaViewer(sceneId)
+                    },
+                    modifier = Modifier.testTag("confirm_stitch_button")
                 ) {
-                    Text(stringResource(R.string.export_anyway))
+                    Text(stringResource(R.string.stitch_action))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissIncompleteFinishConfirm() }) {
-                    Text(stringResource(R.string.keep_shooting))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { viewModel.dismissFinishOptionsDialog() }) {
+                        Text(stringResource(R.string.keep_shooting))
+                    }
+                    FilledTonalButton(
+                        onClick = { viewModel.performExport() },
+                        modifier = Modifier.testTag("confirm_export_button")
+                    ) {
+                        Text(stringResource(R.string.export_anyway))
+                    }
                 }
             }
         )
@@ -568,6 +588,14 @@ private fun StatusBanners(
             )
         }
 
+        if (!state.isSimulated && state.cameraInfo.isReady && !state.cameraInfo.isUltrawide) {
+            HudPill(
+                text = stringResource(R.string.ultrawide_unavailable_info),
+                containerColor = CharcoalSurface.copy(alpha = 0.85f),
+                contentColor = OffWhiteText
+            )
+        }
+
         if (!state.isSimulated && (!state.cameraInfo.aeLockSupported || !state.cameraInfo.awbLockSupported)) {
             val msg = if (!state.cameraInfo.aeLockSupported) {
                 stringResource(R.string.ae_lock_unsupported)
@@ -687,6 +715,7 @@ private fun ManualShutterButton(
 @Composable
 private fun ExposureStatusPill(
     isSimulated: Boolean,
+    isUltrawide: Boolean,
     aeLocked: Boolean,
     awbLocked: Boolean,
     aeSupported: Boolean,
@@ -694,16 +723,17 @@ private fun ExposureStatusPill(
 ) {
     val locked = isSimulated || (aeLocked && awbLocked)
     val unsupported = !isSimulated && (!aeSupported || !awbSupported)
+    val lensPrefix = if (isUltrawide) "UW · " else ""
 
     Surface(
         color = CharcoalSurface.copy(alpha = 0.80f),
         shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.width(96.dp)
+        modifier = Modifier.width(104.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
         ) {
             Icon(
                 imageVector = when {
@@ -717,17 +747,18 @@ private fun ExposureStatusPill(
                     locked -> MintEmerald
                     else -> SignalCyan
                 },
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(15.dp)
             )
-            Spacer(Modifier.width(5.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
-                text = when {
+                text = lensPrefix + when {
                     unsupported -> "Auto"
                     locked -> "AE/WB"
                     else -> "1st Lock"
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = OffWhiteText
+                color = OffWhiteText,
+                maxLines = 1
             )
         }
     }

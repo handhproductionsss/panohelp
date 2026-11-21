@@ -3,6 +3,7 @@ package com.example.data.camera
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
@@ -15,6 +16,7 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -41,8 +43,8 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.atan
-import kotlin.math.min
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -52,6 +54,8 @@ data class CameraHardwareInfo(
     val equivalent35mmFocalLength: Int? = 26,
     val hfovDeg: Float = TargetPlanner.DEFAULT_PORTRAIT_HFOV_DEG,
     val vfovDeg: Float = TargetPlanner.DEFAULT_PORTRAIT_VFOV_DEG,
+    val isUltrawide: Boolean = false,
+    val zoomRatioApplied: Float = 1.0f,
     val aeLockSupported: Boolean = true,
     val awbLockSupported: Boolean = true,
     val aeLocked: Boolean = false,
@@ -71,8 +75,9 @@ data class CapturedImageResult(
 )
 
 /**
- * Manages a single back-facing CameraX session locked to portrait orientation with 4:3 framing,
- * optical FOV inspection via Camera2Interop, and AE/AWB locking for consistent panorama brightness/color.
+ * Manages a single back-facing CameraX session locked to portrait orientation with 4:3 framing.
+ * Automatically picks the phone's widest usable back lens (standalone ultrawide camera or
+ * logical multi-camera minZoomRatio < 1.0) so fewer shots cover the sphere with stronger overlap.
  */
 class CameraController(private val context: Context) {
 
@@ -81,6 +86,7 @@ class CameraController(private val context: Context) {
     private var imageCapture: ImageCapture? = null
     private var boundCamera: Camera? = null
     private var fixedLensId: String? = null
+    private var selectedLens: SelectedLensResult? = null
 
     private val _hardwareInfo = MutableStateFlow(CameraHardwareInfo())
     val hardwareInfo: StateFlow<CameraHardwareInfo> = _hardwareInfo.asStateFlow()
@@ -114,15 +120,22 @@ class CameraController(private val context: Context) {
                     .setTargetRotation(Surface.ROTATION_0)
                     .build()
 
-                // Stick to one consistent back lens across the entire session
-                val selector = buildSingleBackLensSelector(provider, preferredLensId)
+                // Pick widest usable back lens once and keep that same lens for the entire session
+                val (selector, selection) = buildWidestBackLensSelector(provider, preferredLensId)
+                selectedLens = selection
 
                 provider.unbindAll()
                 val camera = provider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
                 boundCamera = camera
                 imageCapture = capture
 
-                val info = inspectHardwareInfo(camera)
+                // If widest FOV is exposed via logical minZoomRatio (< 1.0x), engage it cleanly
+                val appliedZoom = selection?.targetZoomRatio ?: 1.0f
+                if (appliedZoom < 0.98f) {
+                    camera.cameraControl.setZoomRatio(appliedZoom)
+                }
+
+                val info = inspectHardwareInfo(camera, selection)
                 _hardwareInfo.value = info
 
                 if (shouldLockExposureImmediately) {
@@ -138,72 +151,129 @@ class CameraController(private val context: Context) {
     }
 
     @OptIn(ExperimentalCamera2Interop::class)
-    private fun buildSingleBackLensSelector(
+    private fun buildWidestBackLensSelector(
         provider: ProcessCameraProvider,
         preferredLensId: String?
-    ): CameraSelector {
-        val targetId = preferredLensId ?: fixedLensId
-        if (!targetId.isNullOrBlank()) {
-            val matchExists = provider.availableCameraInfos.any { info ->
-                runCatching { Camera2CameraInfo.from(info).cameraId == targetId }.getOrDefault(false)
-            }
-            if (matchExists) {
-                return CameraSelector.Builder()
+    ): Pair<CameraSelector, SelectedLensResult?> {
+        val candidates = provider.availableCameraInfos.mapNotNull { info ->
+            extractLensCandidate(info)
+        }
+
+        val lockedId = preferredLensId ?: fixedLensId
+        if (!lockedId.isNullOrBlank()) {
+            val matching = candidates.firstOrNull { it.cameraId == lockedId }
+            if (matching != null) {
+                val selected = WideLensSelector.selectWidestBackLens(listOf(matching))
+                val selector = CameraSelector.Builder()
                     .addCameraFilter { infos ->
                         infos.filter { info ->
-                            runCatching { Camera2CameraInfo.from(info).cameraId == targetId }.getOrDefault(false)
+                            runCatching { Camera2CameraInfo.from(info).cameraId == lockedId }.getOrDefault(false)
                         }
                     }
                     .build()
+                return selector to selected
             }
         }
-        return CameraSelector.DEFAULT_BACK_CAMERA
+
+        val widest = WideLensSelector.selectWidestBackLens(candidates)
+        if (widest != null) {
+            val chosenId = widest.candidate.cameraId
+            val selector = CameraSelector.Builder()
+                .addCameraFilter { infos ->
+                    infos.filter { info ->
+                        runCatching { Camera2CameraInfo.from(info).cameraId == chosenId }.getOrDefault(false)
+                    }
+                }
+                .build()
+            return selector to widest
+        }
+
+        return CameraSelector.DEFAULT_BACK_CAMERA to null
     }
 
     @OptIn(ExperimentalCamera2Interop::class)
-    private fun inspectHardwareInfo(camera: Camera): CameraHardwareInfo {
+    private fun extractLensCandidate(cameraInfo: CameraInfo): CameraLensCandidate? {
+        return runCatching {
+            val cam2 = Camera2CameraInfo.from(cameraInfo)
+            val facing = cam2.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+            val isBack = facing == CameraCharacteristics.LENS_FACING_BACK
+            if (!isBack) return@runCatching null
+
+            val physicalSize: SizeF? = cam2.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val focalLengths: FloatArray? = cam2.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+            val sensorOrientation: Int = cam2.getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+            val streamMap = cam2.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val maxJpegMp = streamMap?.getOutputSizes(ImageFormat.JPEG)
+                ?.maxOfOrNull { (it.width.toLong() * it.height.toLong()) / 1_000_000f }
+                ?: 12.0f
+
+            val focalMm = focalLengths?.firstOrNull()?.takeIf { it > 0f } ?: 4.2f
+            var hfovDeg = TargetPlanner.DEFAULT_PORTRAIT_HFOV_DEG
+            var vfovDeg = TargetPlanner.DEFAULT_PORTRAIT_VFOV_DEG
+            var eq35mm: Int? = 26
+
+            if (physicalSize != null && physicalSize.width > 0f && physicalSize.height > 0f) {
+                val sensorLong = max(physicalSize.width, physicalSize.height)
+                val sensorShort = min(physicalSize.width, physicalSize.height)
+                val isPortraitRotated = sensorOrientation == 90 || sensorOrientation == 270
+                val horizMm = if (isPortraitRotated) sensorShort else sensorLong
+                val vertMm = if (isPortraitRotated) sensorLong else sensorShort
+
+                hfovDeg = Math.toDegrees(2.0 * atan((horizMm / (2f * focalMm)).toDouble())).toFloat()
+                    .coerceIn(30f, 125f)
+                vfovDeg = Math.toDegrees(2.0 * atan((vertMm / (2f * focalMm)).toDouble())).toFloat()
+                    .coerceIn(35f, 135f)
+
+                val diagMm = sqrt(sensorLong * sensorLong + sensorShort * sensorShort)
+                eq35mm = (focalMm * (43.27f / diagMm)).roundToInt().coerceIn(8, 200)
+            }
+
+            val minZoom = cameraInfo.zoomState.value?.minZoomRatio ?: 1.0f
+
+            CameraLensCandidate(
+                cameraId = cam2.cameraId,
+                isBackFacing = true,
+                baseHfovDeg = hfovDeg,
+                baseVfovDeg = vfovDeg,
+                focalLengthMm = focalMm,
+                equivalent35mmFocalLength = eq35mm,
+                maxMegapixels = maxJpegMp,
+                minZoomRatio = minZoom
+            )
+        }.getOrNull()
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun inspectHardwareInfo(
+        camera: Camera,
+        selection: SelectedLensResult?
+    ): CameraHardwareInfo {
         val cam2Info = Camera2CameraInfo.from(camera.cameraInfo)
         val cameraId = cam2Info.cameraId
         fixedLensId = cameraId
 
-        val physicalSize: SizeF? = cam2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
-        val focalLengths: FloatArray? = cam2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
-        val sensorOrientation: Int = cam2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+        val candidate = selection?.candidate ?: extractLensCandidate(camera.cameraInfo)
         val aeLockAvail = cam2Info.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) ?: false
         val awbLockAvail = cam2Info.getCameraCharacteristic(CameraCharacteristics.CONTROL_AWB_LOCK_AVAILABLE) ?: false
         val timestampSrc = cam2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE)
             ?: CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE_UNKNOWN
 
-        val focalMm = focalLengths?.firstOrNull()?.takeIf { it > 0f } ?: 4.2f
-
-        var hfovDeg = TargetPlanner.DEFAULT_PORTRAIT_HFOV_DEG
-        var vfovDeg = TargetPlanner.DEFAULT_PORTRAIT_VFOV_DEG
-        var eq35mm: Int? = 26
-
-        if (physicalSize != null && physicalSize.width > 0f && physicalSize.height > 0f) {
-            val sensorLong = max(physicalSize.width, physicalSize.height)
-            val sensorShort = min(physicalSize.width, physicalSize.height)
-            // In portrait, if sensorOrientation is 90/270, short sensor side is horizontal & long is vertical
-            val isPortraitRotated = sensorOrientation == 90 || sensorOrientation == 270
-            val horizMm = if (isPortraitRotated) sensorShort else sensorLong
-            val vertMm = if (isPortraitRotated) sensorLong else sensorShort
-
-            hfovDeg = Math.toDegrees(2.0 * atan((horizMm / (2f * focalMm)).toDouble())).toFloat()
-                .coerceIn(30f, 110f)
-            vfovDeg = Math.toDegrees(2.0 * atan((vertMm / (2f * focalMm)).toDouble())).toFloat()
-                .coerceIn(35f, 120f)
-
-            val diagMm = sqrt(sensorLong * sensorLong + sensorShort * sensorShort)
-            val fullFrameDiagMm = 43.27f
-            eq35mm = (focalMm * (fullFrameDiagMm / diagMm)).roundToInt().coerceIn(10, 200)
+        val zoom = selection?.targetZoomRatio ?: 1.0f
+        val hfovDeg = selection?.effectiveHfovDeg ?: candidate?.baseHfovDeg ?: TargetPlanner.DEFAULT_PORTRAIT_HFOV_DEG
+        val vfovDeg = selection?.effectiveVfovDeg ?: candidate?.baseVfovDeg ?: TargetPlanner.DEFAULT_PORTRAIT_VFOV_DEG
+        val focalMm = candidate?.focalLengthMm ?: 4.2f
+        val eq35 = candidate?.equivalent35mmFocalLength?.let {
+            if (zoom < 0.98f) (it * zoom).roundToInt().coerceAtLeast(10) else it
         }
 
         return CameraHardwareInfo(
-            lensId = cameraId,
+            lensId = if (zoom < 0.98f) "${cameraId}@${String.format(java.util.Locale.US, "%.2fx", zoom)}" else cameraId,
             focalLengthMm = focalMm,
-            equivalent35mmFocalLength = eq35mm,
+            equivalent35mmFocalLength = eq35,
             hfovDeg = hfovDeg,
             vfovDeg = vfovDeg,
+            isUltrawide = selection?.isUltrawide ?: (hfovDeg >= 68f),
+            zoomRatioApplied = zoom,
             aeLockSupported = aeLockAvail,
             awbLockSupported = awbLockAvail,
             aeLocked = false,
@@ -269,8 +339,6 @@ class CameraController(private val context: Context) {
                         val imageTimestampNanos = image.imageInfo.timestamp
                         val nowNanos = SystemClock.elapsedRealtimeNanos()
 
-                        // Use sensor image timestamp when it's on the same clock epoch (REALTIME)
-                        // Otherwise fall back to exposureStartNanos captured at shutter start.
                         val lookupNanos = if (info.timestampSourceIsRealtime &&
                             kotlin.math.abs(nowNanos - imageTimestampNanos) < 5_000_000_000L
                         ) {
@@ -291,7 +359,6 @@ class CameraController(private val context: Context) {
                             out.write(bytes)
                         }
 
-                        // Ensure EXIF rotation matches portrait and read dimensions
                         val rotationDeg = image.imageInfo.rotationDegrees
                         val dims = saveThumbnailAndReadDimensions(
                             jpegFile = photoFile,

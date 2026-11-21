@@ -53,6 +53,7 @@ interface PanoDao {
             vfovDeg = :vfovDeg,
             focalLengthMm = :focalLengthMm,
             lensId = :lensId,
+            isUltrawide = :isUltrawide,
             aeLockSupported = :aeLockSupported,
             awbLockSupported = :awbLockSupported,
             updatedAtMs = :updatedAtMs
@@ -65,6 +66,7 @@ interface PanoDao {
         vfovDeg: Float,
         focalLengthMm: Float,
         lensId: String,
+        isUltrawide: Boolean,
         aeLockSupported: Boolean,
         awbLockSupported: Boolean,
         updatedAtMs: Long
