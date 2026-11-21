@@ -118,7 +118,7 @@ class AimingGuidanceEngine(
 
         var shouldTriggerAuto = false
 
-        if (eligibleForHold && activeTarget != null) {
+        if (eligibleForHold) {
             if (holdTargetId != activeTarget.id) {
                 holdTargetId = activeTarget.id
                 holdAccumulatedMs = 0L
