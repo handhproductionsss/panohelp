@@ -1,0 +1,71 @@
+<resources>
+    <string name="app_name">PanoGuide</string>
+    <string name="tagline">Guided 360° Scene Capture</string>
+
+    <!-- Home / Sessions -->
+    <string name="sessions_title">Scenes</string>
+    <string name="new_scene_cta">New Scene</string>
+    <string name="empty_sessions_title">Ready to capture a room</string>
+    <string name="empty_sessions_body">Create a scene to capture a full 360° set of overlapping photos with recorded camera directions for stitching.</string>
+    <string name="simulated_mode_label">Simulated Mode</string>
+    <string name="simulated_mode_desc">Test capture, overlay &amp; export without a real camera</string>
+    <string name="resume_session">Resume</string>
+    <string name="export_share">Share</string>
+    <string name="re_export">Re-export</string>
+    <string name="delete_session">Delete</string>
+    <string name="delete_confirm_title">Delete scene?</string>
+    <string name="delete_confirm_body">This removes \"%1$s\" and all captured photos from the app. Already exported ZIPs in Downloads stay untouched.</string>
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="new_scene_dialog_title">Name your scene</string>
+    <string name="new_scene_hint">e.g. Living Room</string>
+    <string name="start_capture">Start Capture</string>
+    <string name="status_in_progress">In Progress</string>
+    <string name="status_exported">Exported</string>
+    <string name="created_at_format">Started %1$s</string>
+
+    <!-- Permissions -->
+    <string name="camera_permission_title">Camera Access Needed</string>
+    <string name="camera_permission_reason">PanoGuide needs your back camera to preview the scene and capture overlapping photos for stitching.</string>
+    <string name="grant_camera_permission">Allow Camera</string>
+    <string name="open_settings">Open Settings</string>
+    <string name="use_simulated_instead">Use Simulated Mode</string>
+
+    <!-- Capture Screen -->
+    <string name="finish_scene">Finish</string>
+    <string name="retake_banner">Retaking target — aim at the highlighted marker</string>
+    <string name="cancel_retake">Cancel Retake</string>
+    <string name="tilt_left_warning">Tilted left — tilt top right to level</string>
+    <string name="tilt_right_warning">Tilted right — tilt top left to level</string>
+    <string name="moving_too_fast_warning">Moving too fast — hold steady</string>
+    <string name="hold_steady_hint">Hold steady…</string>
+    <string name="sphere_covered_hint">All targets covered — tap Finish</string>
+    <string name="manual_capture_cd">Capture photo manually</string>
+    <string name="sound_on_cd">Shutter sound on</string>
+    <string name="sound_off_cd">Shutter sound muted</string>
+    <string name="ae_awb_locked">Exposure &amp; color locked</string>
+    <string name="ae_awb_waiting">Auto-exposure locks on 1st shot</string>
+    <string name="ae_lock_unsupported">Exposure lock unavailable on this phone — brightness may vary</string>
+    <string name="awb_lock_unsupported">White balance lock unavailable — color tone may shift</string>
+    <string name="gyro_fallback_warning">Gyroscope unavailable — using compass fusion (keep away from metal)</string>
+    <string name="sensor_unavailable_warning">Orientation sensors unavailable on this device</string>
+    <string name="low_storage_warning">Low storage space (&lt;100 MB). Finish or free space soon.</string>
+
+    <!-- Simulated Mode HUD -->
+    <string name="sim_drag_hint">Simulated Mode: Drag viewfinder to aim</string>
+    <string name="sim_snap_nearest">Aim Nearest</string>
+    <string name="sim_test_tilt">Tilt 15°</string>
+    <string name="sim_test_shake">Shake</string>
+    <string name="sim_level_reset">Level</string>
+
+    <!-- Export -->
+    <string name="exporting_package">Building export package…</string>
+    <string name="export_success_title">Export Saved</string>
+    <string name="export_success_body">Saved %1$s to Downloads/PanoGuide.</string>
+    <string name="share_package">Share Package</string>
+    <string name="done">Done</string>
+    <string name="finish_incomplete_title">Finish scene now?</string>
+    <string name="finish_incomplete_body">Some targets on the sphere are still empty. Export the captured photos anyway or keep shooting?</string>
+    <string name="export_anyway">Export Package</string>
+    <string name="keep_shooting">Keep Shooting</string>
+</resources>
